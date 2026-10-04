@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-Inspector | Валидация академических отчетов (КМУ)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18 & ReactDOM & Babel for JSX -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Font Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    code, pre { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-indigo-500 selection:text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [status, setStatus] = useState({ gemini_configured: false });
+      const [file, setFile] = useState(null);
+      const [rawText, setRawText] = useState("");
+      const [inputMode, setInputMode] = useState("file"); // "file" or "text"
+      const [useAI, setUseAI] = useState(true);
+      const [loading, setLoading] = useState(false);
+      const [report, setReport] = useState(null);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        fetch("/api/status")
+          .then(res => res.json())
+          .then(data => setStatus(data))
+          .catch(() => setStatus({ gemini_configured: false }));
+      }, []);
+
+      const handleFileChange = (e) => {
+        if (e.target.files && e.target.files[0]) {
+          setFile(e.target.files[0]);
+        }
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        setReport(null);
+
+        try {
+          let response;
+          if (inputMode === "file") {
+            if (!file) throw new Error("Пожалуйста, выберите файл .docx или .txt");
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("use_ai", useAI ? "true" : "false");
+            response = await fetch("/api/validate", { method: "POST", body: formData });
+          } else {
+            if (!rawText.trim()) throw new Error("Пожалуйста, вставьте текст отчета");
+            response = await fetch("/api/validate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: rawText, use_ai: useAI })
+            });
+          }
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || "Ошибка при обработке отчета сервером");
+          }
+
+          const data = await response.json();
+          setReport(data);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const getGradeColor = (letter) => {
+        if (letter.startsWith("A")) return "text-emerald-400 border-emerald-500/30 bg-emerald-500/10";
+        if (letter.startsWith("B")) return "text-blue-400 border-blue-500/30 bg-blue-500/10";
+        if (letter.startsWith("C")) return "text-amber-400 border-amber-500/30 bg-amber-500/10";
+        if (letter.startsWith("D")) return "text-orange-400 border-orange-500/30 bg-orange-500/10";
+        return "text-rose-400 border-rose-500/30 bg-rose-500/10";
+      };
+
+      return (
+        <div className="max-w-6xl mx-auto px-4 py-8">
+          {/* Header */}
+          <header className="flex flex-col md:flex-row md:items-center md:justify-between pb-8 mb-8 border-b border-slate-800 gap-4">
+            <div>
+              <div className="flex items-center gap-3">
+                <span className="px-2.5 py-1 text-xs font-semibold bg-indigo-500/20 text-indigo-400 rounded-md border border-indigo-500/30 tracking-wide uppercase">
+                  КМУ • Биостатистика
+                </span>
+                <span className="text-xs text-slate-400">Цифровая грамотность и ИИ</span>
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight mt-2 text-white">
+                AI-Inspector
+              </h1>
+              <p className="text-sm text-slate-400 mt-1">
+                Автоматическая валидация отчетов, проверка Word-верстки и рецензирование с Gemini
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <a 
+                href="https://github.com/argokz/ai-inspector" 
+                target="_blank" 
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-900 border border-slate-800 rounded-lg hover:border-slate-700 hover:text-white transition"
+              >
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                </svg>
+                GitHub
+              </a>
+
+              {status.gemini_configured ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Gemini AI активен
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20" title="Добавьте токен в .env файл проекта">
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  Ожидает токен в .env
+                </span>
+              )}
+            </div>
+          </header>
+
+          {/* Input Section */}
+          <section className="bg-slate-900/60 backdrop-blur border border-slate-800 rounded-2xl p-6 mb-8 shadow-xl">
+            <div className="flex border-b border-slate-800 mb-6 pb-2 gap-4">
+              <button 
+                onClick={() => setInputMode("file")}
+                className={`text-sm font-semibold pb-2 border-b-2 transition ${inputMode === "file" ? "border-indigo-500 text-indigo-400" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+              >
+                Загрузить документ (.docx, .txt)
+              </button>
+              <button 
+                onClick={() => setInputMode("text")}
+                className={`text-sm font-semibold pb-2 border-b-2 transition ${inputMode === "text" ? "border-indigo-500 text-indigo-400" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+              >
+                Вставить текст отчёта
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              {inputMode === "file" ? (
+                <div className="border-2 border-dashed border-slate-700 hover:border-indigo-500/60 rounded-xl p-8 text-center bg-slate-950/40 transition">
+                  <input 
+                    type="file" 
+                    id="fileUpload" 
+                    accept=".docx,.txt,.md" 
+                    onChange={handleFileChange}
+                    className="hidden" 
+                  />
+                  <label htmlFor="fileUpload" className="cursor-pointer flex flex-col items-center">
+                    <svg className="w-12 h-12 text-slate-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <span className="text-sm font-medium text-slate-200">
+                      {file ? file.name : "Выберите или перетащите файл .docx / .txt"}
+                    </span>
+                    <span className="text-xs text-slate-500 mt-1">
+                      Поддерживается точная проверка разметки Word: рамка титульника, поля, таблицы
+                    </span>
+                  </label>
+                </div>
+              ) : (
+                <textarea 
+                  rows="9"
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                  placeholder="Вставьте полный текст отчета студента (включая титульный лист, аннотации, таблицы и список источников)..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                ></textarea>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+                <label className="flex items-center gap-2.5 cursor-pointer text-sm text-slate-300">
+                  <input 
+                    type="checkbox" 
+                    checked={useAI} 
+                    onChange={(e) => setUseAI(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>Включить смысловую рецензию Gemini AI</span>
+                </label>
+
+                <button 
+                  type="submit" 
+                  disabled={loading}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-medium rounded-xl text-sm transition shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                      </svg>
+                      Анализ отчёта...
+                    </>
+                  ) : "Проверить отчёт"}
+                </button>
+              </div>
+            </form>
+
+            {error && (
+              <div className="mt-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-400">
+                {error}
+              </div>
+            )}
+          </section>
+
+          {/* Report Results */}
+          {report && (
+            <div className="space-y-8 animate-fadeIn">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 md:col-span-2 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Итоговый балл</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-4xl font-extrabold text-white">{report.total_score}</span>
+                      <span className="text-slate-500 text-sm">/ {report.max_total} ({report.percentage}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+                      <div 
+                        className="bg-indigo-500 h-full rounded-full transition-all duration-1000"
+                        style={{ width: `${report.percentage}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className={`px-4 py-3 rounded-2xl border text-center ${getGradeColor(report.grade_letter)}`}>
+                    <div className="text-3xl font-black">{report.grade_letter}</div>
+                    <div className="text-xs font-semibold mt-0.5">GPA: {report.gpa}</div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+                  <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Верстка Word</span>
+                  <div className="mt-2 text-xs space-y-1.5 text-slate-300">
+                    <div className="flex justify-between">
+                      <span>Рамка титульника:</span>
+                      <span className="font-semibold text-emerald-400">
+                        {report.layout.has_page_borders ? (report.layout.borders_first_page_only ? "✓ Только 1-я стр." : "! На всех стр.") : "✗ Нет"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Скрытие номера:</span>
+                      <span className="font-semibold text-emerald-400">
+                        {report.layout.has_title_page_setting ? "✓ Да" : "✗ Нет"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Поля (Л/П):</span>
+                      <span className="font-semibold text-slate-300">
+                        {report.layout.left_margin_cm || 3} см / {report.layout.right_margin_cm || 1} см
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+                  <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Статус проверки</span>
+                  <div className="mt-2 text-xs text-slate-300 space-y-1.5">
+                    <div>Критериев сдано: <strong className="text-white">{Object.values(report.criteria).filter(c => c.passed).length} / 8</strong></div>
+                    <div>Требует внимания: <strong className="text-amber-400">{Object.values(report.criteria).filter(c => !c.passed).length} критериев</strong></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gemini AI Teacher Card (if available) */}
+              {report.gemini_review && report.gemini_review.teacher_feedback && (
+                <div className="bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-900/60 border border-indigo-500/30 rounded-2xl p-6 shadow-xl">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="px-2 py-0.5 text-xs font-semibold bg-indigo-500/20 text-indigo-300 rounded border border-indigo-500/30">
+                      Рецензент кафедры
+                    </span>
+                    <h3 className="text-base font-bold text-white">Рецензия преподавателя (Gemini AI)</h3>
+                  </div>
+                  <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                    {report.gemini_review.teacher_feedback}
+                  </p>
+                  {report.gemini_review.key_recommendations && (
+                    <div className="mt-4 pt-4 border-t border-indigo-500/20">
+                      <h4 className="text-xs uppercase tracking-wider text-indigo-400 font-semibold mb-2">Ключевые замечания эксперта:</h4>
+                      <ul className="text-xs text-slate-300 space-y-1 list-disc list-inside">
+                        {report.gemini_review.key_recommendations.map((rec, i) => (
+                          <li key={i}>{rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Criteria Detailed Grid */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-white">Детальный чек-лист по 8 критериям</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(report.criteria).map(([key, crit]) => (
+                    <div 
+                      key={key} 
+                      className={`p-5 rounded-2xl border transition ${
+                        crit.passed 
+                          ? "bg-slate-900/40 border-slate-800" 
+                          : "bg-slate-900/70 border-amber-500/30"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+                        <span className="text-sm font-semibold text-white flex items-center gap-2">
+                          <span className={crit.passed ? "text-emerald-400" : "text-amber-400"}>
+                            {crit.passed ? "✔" : "✖"}
+                          </span>
+                          {crit.name}
+                        </span>
+                        <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                          {crit.score} / {crit.max_score} б.
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-1 text-xs">
+                        {crit.comments.map((c, i) => (
+                          <div key={i} className="text-slate-400">{c}</div>
+                        ))}
+                        {crit.warnings.map((w, i) => (
+                          <div key={i} className="text-amber-400 font-medium">{w}</div>
+                        ))}
+                        {crit.penalties.map((p, i) => (
+                          <div key={i} className="text-rose-400 font-semibold">{p}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actionable Recommendations */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+                <h3 className="text-base font-bold text-white mb-3">Что необходимо исправить для получения «A» (95+):</h3>
+                <ul className="text-sm text-slate-300 space-y-2">
+                  <li className="flex items-start gap-2">
+                    <span className="text-indigo-400 font-bold">•</span>
+                    <span><strong>Код МКБ-11:</strong> Обязательно укажите код заболевания (например, <code>RA01</code> для COVID-19) в описании наборов данных.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-indigo-400 font-bold">•</span>
+                    <span><strong>Официальные источники:</strong> Замените ссылки на Википедию в Таблице 3 официальными отчетами Минздрава или CDC выбранной страны.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-indigo-400 font-bold">•</span>
+                    <span><strong>Библиография AMA:</strong> Замените «голые» веб-ссылки полными библиографическими описаниями интернет-ресурсов (автор, название, год, URL, дата обращения).</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-indigo-400 font-bold">•</span>
+                    <span><strong>Промт-инжиниринг:</strong> Добавьте в раздел ИИ дату запроса и 5-компонентную формулировку промта (Роль + Задача + Контекст + Формат + Ограничения).</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
